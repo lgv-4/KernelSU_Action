@@ -1,4 +1,4 @@
-name: Build Kernel Full
+name: Build Kernel Full Fixed
 on:
   workflow_dispatch:
 
@@ -9,16 +9,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Prepare Configuration
-      run: |
-        # تعيين المتغيرات الأساسية مباشرة لضمان الاستقرار
-        echo "KERNEL_SOURCE=https://github.com/MiCode/Xiaomi_Kernel_OpenSource" >> $GITHUB_ENV
-        echo "KERNEL_SOURCE_BRANCH=star-r-oss" >> $GITHUB_ENV
-        echo "KERNEL_CONFIG=vendor/star_defconfig" >> $GITHUB_ENV
-        echo "KERNEL_IMAGE_NAME=Image.gz-dtb" >> $GITHUB_ENV
-        echo "ENABLE_KERNELSU=true" >> $GITHUB_ENV
-        echo "KERNELSU_TAG=v0.9.5" >> $GITHUB_ENV
-
     - name: Setup Environment
       run: |
         sudo apt-get update
@@ -28,51 +18,44 @@ jobs:
     - name: Download Toolchains
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
-        # سحب Proton Clang (الذي تأكدنا منه)
         git clone https://github.com/kdrag0n/proton-clang.git --depth=1 clang-aosp
-        
-        # تحميل GCC 64 & 32 لضمان التوافقية
         mkdir -p gcc-64 gcc-32
         curl -L https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz -o gcc64.tar.gz
         tar -C gcc-64/ -zxf gcc64.tar.gz
         curl -L https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz -o gcc32.tar.gz
         tar -C gcc-32/ -zxf gcc32.tar.gz
-        
         echo "GCC_64=CROSS_COMPILE=$GITHUB_WORKSPACE/kernel_workspace/gcc-64/bin/aarch64-linux-android-" >> $GITHUB_ENV
         echo "GCC_32=CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/kernel_workspace/gcc-32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
 
-    - name: Download Kernel Source
+    - name: Download Kernel Source (Submodules Included)
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
-        # سحب السورس مع المجلدات الفرعية (Recursive) لضمان وجود مجلد vendor
-        git clone --recursive ${{ env.KERNEL_SOURCE }} -b ${{ env.KERNEL_SOURCE_BRANCH }} android-kernel --depth=1
+        # سحب السورس مع إجبار سحب المجلدات الفرعية (هنا الحل)
+        git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/MiCode/Xiaomi_Kernel_OpenSource -b star-r-oss android-kernel
 
     - name: Setup KernelSU
-      if: env.ENABLE_KERNELSU == 'true'
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s ${{ env.KERNELSU_TAG }}
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
     - name: Build Kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
-        
-        # الخطوة الحاسمة: استخدام المسار الذي نجح في الفحص
-        make -j$(nproc --all) CC=clang O=out ARCH=arm64 ${{ env.KERNEL_CONFIG }}
+        # التأكد اليدوي من وجود الملف قبل البدء لعدم ضياع الوقت
+        if [ ! -f "arch/arm64/configs/vendor/star_defconfig" ]; then
+          echo "خطأ فني: ملف vendor/star_defconfig لا يزال مفقوداً!"
+          exit 1
+        fi
+        make -j$(nproc --all) CC=clang O=out ARCH=arm64 vendor/star_defconfig
         make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 ${{ env.GCC_64 }} ${{ env.GCC_32 }} CLANG_TRIPLE=aarch64-linux-gnu-
 
     - name: Upload Result
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
         git clone https://github.com/osm0sis/AnyKernel3 --depth=1 AnyKernel3
-        if [ -f "android-kernel/out/arch/arm64/boot/${{ env.KERNEL_IMAGE_NAME }}" ]; then
-            cp android-kernel/out/arch/arm64/boot/${{ env.KERNEL_IMAGE_NAME }} AnyKernel3/
-            cd AnyKernel3 && zip -r9 ../AnyKernel3-Mi11Ultra-Muktada.zip *
-        else
-            echo "فشل البناء: ملف Image غير موجود!"
-            exit 1
-        fi
+        cp android-kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+        cd AnyKernel3 && zip -r9 ../AnyKernel3-Mi11Ultra-Muktada.zip *
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
