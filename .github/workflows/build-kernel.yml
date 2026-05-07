@@ -13,9 +13,10 @@ jobs:
         set -a
         [ -f config.env ] && source config.env
         set +a
+        # تثبيت المتغيرات الأساسية
         echo "KERNEL_SOURCE=$KERNEL_SOURCE" >> $GITHUB_ENV
         echo "KERNEL_SOURCE_BRANCH=$KERNEL_SOURCE_BRANCH" >> $GITHUB_ENV
-        echo "KERNEL_CONFIG=$KERNEL_CONFIG" >> $GITHUB_ENV
+        echo "KERNEL_CONFIG=vendor/star_defconfig" >> $GITHUB_ENV
         echo "KERNEL_IMAGE_NAME=$KERNEL_IMAGE_NAME" >> $GITHUB_ENV
         echo "ENABLE_KERNELSU=$ENABLE_KERNELSU" >> $GITHUB_ENV
         echo "KERNELSU_TAG=$KERNELSU_TAG" >> $GITHUB_ENV
@@ -43,7 +44,6 @@ jobs:
         tar -C gcc-32/ -zxf gcc-32.tar.gz
         
         rm *.tar.gz
-        
         echo "GCC_64=CROSS_COMPILE=$GITHUB_WORKSPACE/kernel_workspace/gcc-64/bin/aarch64-linux-android-" >> $GITHUB_ENV
         echo "GCC_32=CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/kernel_workspace/gcc-32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
 
@@ -63,18 +63,8 @@ jobs:
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
         
-        # فحص مكان ملف الـ defconfig الصحيح (البحث الذكي)
-        if [ -f "arch/arm64/configs/${{ env.KERNEL_CONFIG }}" ]; then
-            CONF_PATH="arch/arm64/configs/${{ env.KERNEL_CONFIG }}"
-        else
-            # إذا لم يجد star_defconfig، سيبحث عن أي ملف يحتوي على star
-            CONF_PATH=$(find arch/arm64/configs/ -name "*star*" | head -n 1)
-        fi
-        
-        REAL_CONFIG=$(basename $CONF_PATH)
-        echo "Target Config: $REAL_CONFIG"
-        
-        make -j$(nproc --all) CC=clang O=out ARCH=arm64 $REAL_CONFIG
+        # استخدام المسار الذي اكتشفناه في الصورة
+        make -j$(nproc --all) CC=clang O=out ARCH=arm64 ${{ env.KERNEL_CONFIG }}
         make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 ${{ env.GCC_64 }} ${{ env.GCC_32 }} CLANG_TRIPLE=aarch64-linux-gnu-
 
     - name: Upload Result
