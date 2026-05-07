@@ -1,81 +1,35 @@
-name: Build Kernel
+name: Debug Configs
 on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build Kernel by ${{ github.actor }}
-    runs-on: ubuntu-22.04
+  debug:
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Prepare Configuration
-      run: |
-        set -a
-        [ -f config.env ] && source config.env
-        set +a
-        # تثبيت المتغيرات الأساسية
-        echo "KERNEL_SOURCE=$KERNEL_SOURCE" >> $GITHUB_ENV
-        echo "KERNEL_SOURCE_BRANCH=$KERNEL_SOURCE_BRANCH" >> $GITHUB_ENV
-        echo "KERNEL_CONFIG=vendor/star_defconfig" >> $GITHUB_ENV
-        echo "KERNEL_IMAGE_NAME=$KERNEL_IMAGE_NAME" >> $GITHUB_ENV
-        echo "ENABLE_KERNELSU=$ENABLE_KERNELSU" >> $GITHUB_ENV
-        echo "KERNELSU_TAG=$KERNELSU_TAG" >> $GITHUB_ENV
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup Environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git ccache flex bison libssl-dev bc python3 zip unzip tar curl wget
-        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
+      - name: Download Kernel Source (Fast Clone)
+        run: |
+          # سحب السورس بدون التاريخ (عمق 1) لتوفير الوقت
+          git clone --depth=1 https://github.com/MiCode/Xiaomi_Kernel_OpenSource -b star-r-oss kernel-source
 
-    - name: Download Toolchains
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        echo "Downloading Proton Clang..."
-        git clone https://github.com/kdrag0n/proton-clang.git --depth=1 clang-aosp
-        
-        echo "Downloading GCC 64-bit..."
-        mkdir -p gcc-64
-        curl -L https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz -o gcc64.tar.gz
-        tar -C gcc-64/ -zxf gcc64.tar.gz
-        
-        echo "Downloading GCC 32-bit..."
-        mkdir -p gcc-32
-        curl -L https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz -o gcc-32.tar.gz
-        tar -C gcc-32/ -zxf gcc-32.tar.gz
-        
-        rm *.tar.gz
-        echo "GCC_64=CROSS_COMPILE=$GITHUB_WORKSPACE/kernel_workspace/gcc-64/bin/aarch64-linux-android-" >> $GITHUB_ENV
-        echo "GCC_32=CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/kernel_workspace/gcc-32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
-
-    - name: Download Kernel Source
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone --recursive ${{ env.KERNEL_SOURCE }} -b ${{ env.KERNEL_SOURCE_BRANCH }} android-kernel --depth=1
-
-    - name: Setup KernelSU
-      if: env.ENABLE_KERNELSU == 'true'
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s ${{ env.KERNELSU_TAG }}
-
-    - name: Build kernel
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
-        
-        # استخدام المسار الذي اكتشفناه في الصورة
-        make -j$(nproc --all) CC=clang O=out ARCH=arm64 ${{ env.KERNEL_CONFIG }}
-        make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 ${{ env.GCC_64 }} ${{ env.GCC_32 }} CLANG_TRIPLE=aarch64-linux-gnu-
-
-    - name: Upload Result
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone https://github.com/osm0sis/AnyKernel3 --depth=1 AnyKernel3
-        cp android-kernel/out/arch/arm64/boot/${{ env.KERNEL_IMAGE_NAME }} AnyKernel3/
-        cd AnyKernel3 && zip -r9 ../AnyKernel3-Mi11Ultra.zip *
-        
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: AnyKernel3-Mi11Ultra
-        path: kernel_workspace/AnyKernel3-Mi11Ultra.zip
+      - name: Scan All Config Files
+        run: |
+          echo "--- بدء المسح الشامل لملفات الإعدادات ---"
+          cd kernel-source/arch/arm64/configs
+          
+          echo "1. الملفات في المجلد الرئيسي:"
+          ls -F
+          
+          echo -e "\n2. الملفات داخل مجلد vendor (إذا وجد):"
+          if [ -d "vendor" ]; then
+            ls -R vendor/
+          else
+            echo "مجلد vendor غير موجود هنا!"
+          fi
+          
+          echo -e "\n3. البحث عن أي ملف يحتوي كلمة star:"
+          find . -name "*star*"
+          
+          echo "--- انتهى الفحص ---"
