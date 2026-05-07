@@ -29,12 +29,9 @@ jobs:
     - name: Download Toolchains
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace
-        
-        # 1. سحب Proton Clang (الذي تأكدت من رابطه وصورته قبل قليل)
         echo "Downloading Proton Clang..."
         git clone https://github.com/kdrag0n/proton-clang.git --depth=1 clang-aosp
         
-        # 2. تحميل GCC مع تسمية الملفات بدقة لضمان فك الضغط
         echo "Downloading GCC 64-bit..."
         mkdir -p gcc-64
         curl -L https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz -o gcc64.tar.gz
@@ -61,12 +58,23 @@ jobs:
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s ${{ env.KERNELSU_TAG }}
 
-    - name: Build Kernel
+    - name: Build kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
-        # هذه الخطوة هي التي تأخذ الوقت الأكبر (عملية الطبخ)
-        make -j$(nproc --all) CC=clang O=out ARCH=arm64 ${{ env.KERNEL_CONFIG }}
+        
+        # فحص مكان ملف الـ defconfig الصحيح (البحث الذكي)
+        if [ -f "arch/arm64/configs/${{ env.KERNEL_CONFIG }}" ]; then
+            CONF_PATH="arch/arm64/configs/${{ env.KERNEL_CONFIG }}"
+        else
+            # إذا لم يجد star_defconfig، سيبحث عن أي ملف يحتوي على star
+            CONF_PATH=$(find arch/arm64/configs/ -name "*star*" | head -n 1)
+        fi
+        
+        REAL_CONFIG=$(basename $CONF_PATH)
+        echo "Target Config: $REAL_CONFIG"
+        
+        make -j$(nproc --all) CC=clang O=out ARCH=arm64 $REAL_CONFIG
         make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 ${{ env.GCC_64 }} ${{ env.GCC_32 }} CLANG_TRIPLE=aarch64-linux-gnu-
 
     - name: Upload Result
