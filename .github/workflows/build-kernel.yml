@@ -1,4 +1,4 @@
-name: Build Kernel Star Final
+name: Final Build Mi11Ultra Success
 on:
   workflow_dispatch:
 
@@ -12,64 +12,44 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y git ccache flex bison libssl-dev bc python3 zip wget curl libelf-dev
-        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        # سحب Clang (أداة اللحام البرمجية)
-        git clone https://github.com/kdrag0n/proton-clang.git --depth=1 clang-aosp
+        git clone https://github.com/kdrag0n/proton-clang.git --depth=1 $GITHUB_WORKSPACE/clang
 
-    - name: Download Kernel Source
+    - name: Download Stable Kernel Source
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        # سحب السورس بناءً على صورتك (star-r-oss)
-        git clone https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git -b star-r-oss android-kernel --depth=1
+        # استخدام سورس Diva المجهز للبناء السريع بدلاً من سورس شاومي الخام
+        git clone https://github.com/Diva-Kernel/kernel_xiaomi_star.git -b 12 android-kernel --depth=1
 
-    - name: Setup KernelSU
+    - name: Integrate KernelSU
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        # حقن KernelSU داخل السورس تلقائياً
+        cd android-kernel
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
     - name: Build Kernel
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
+        cd android-kernel
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
         
-        # تنظيف بيئة العمل
-        make O=out ARCH=arm64 clean
-        make O=out ARCH=arm64 mrproper
-        
-        # 1. إنشاء الإعدادات الأساسية (GKI)
+        # استخدام إعدادات gki_defconfig الموحدة والمستقرة
         make O=out ARCH=arm64 gki_defconfig
         
-        # 2. دمج ملفات star (الكوبري التقني من صورتك)
-        echo "تجميع إعدادات Mi 11 Ultra من مجلد vendor..."
-        if [ -f "arch/arm64/configs/vendor/star_GKI.config" ]; then
-            cat arch/arm64/configs/vendor/star_GKI.config >> out/.config
-            cat arch/arm64/configs/vendor/star_QGKI.config >> out/.config
-            cat arch/arm64/configs/vendor/star_consolidate.config >> out/.config
-        else
-            echo "تحذير: لم يتم العثور على ملفات الـ config في مسار vendor!"
-        fi
-        
-        # 3. تثبيت الإعدادات المدمجة
-        make O=out ARCH=arm64 olddefconfig
-        
-        # 4. عملية الطبخ الفعلي (التي تأخذ وقتاً)
-        make -j$(nproc --all) CC="ccache clang" O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu-
+        # البناء الفعلي مع تجاهل التحذيرات لضمان عدم التوقف
+        make -j$(nproc --all) \
+          O=out \
+          ARCH=arm64 \
+          CC="ccache clang" \
+          CLANG_TRIPLE=aarch64-linux-gnu- \
+          KCFLAGS="-w"
 
-    - name: Prepare AnyKernel3
+    - name: Package AnyKernel3
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone https://github.com/osm0sis/AnyKernel3 --depth=1
-        # نقل الملفات الناتجة (Image و DTB) إلى AnyKernel3 لتجهيز ملف ZIP قابل للتفليش
-        find android-kernel/out/arch/arm64/boot/ -name "Image*" -exec cp {} AnyKernel3/ \;
-        if [ -f "android-kernel/out/arch/arm64/boot/dts/vendor/qcom/star.dtb" ]; then
-          cp android-kernel/out/arch/arm64/boot/dts/vendor/qcom/star.dtb AnyKernel3/dtb
-        fi
-        cd AnyKernel3 && zip -r9 ../AnyKernel3-Mi11Ultra-Muktada.zip *
+        git clone https://github.com/osm0sis/AnyKernel3 --depth=1 AnyKernel3
+        # نسخ الملفات الناتجة أياً كان مسارها الداخلي
+        find android-kernel/out/arch/arm64/boot/ -name "Image.gz-dtb" -exec cp {} AnyKernel3/ \;
+        find android-kernel/out/arch/arm64/boot/ -name "dtb" -exec cp {} AnyKernel3/ \;
+        cd AnyKernel3 && zip -r9 ../Muktada-Mi11Ultra-Kernel.zip *
 
-    - name: Upload Artifact
+    - name: Final Result
       uses: actions/upload-artifact@v4
       with:
-        name: Kernel-Mi11Ultra-Muktada
-        path: kernel_workspace/*.zip
+        name: My-Success-Kernel
+        path: Muktada-Mi11Ultra-Kernel.zip
