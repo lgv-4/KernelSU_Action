@@ -1,4 +1,4 @@
-name: Mi11Ultra Final Success
+name: Mi11Ultra Success Final
 on:
   workflow_dispatch:
 
@@ -8,51 +8,41 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Environment Setup
+    - name: Tools Setup
       run: |
         sudo apt-get update
         sudo apt-get install -y git ccache flex bison libssl-dev bc python3 zip wget curl libelf-dev
-        # تحميل أداة Proton Clang بشكل مباشر وسريع
         git clone https://github.com/kdrag0n/proton-clang.git --depth=1 $GITHUB_WORKSPACE/clang
 
-    - name: Clone Kernel (Direct Link)
+    - name: Download Stable Source
       run: |
-        # سحب سورس شاومي الرسمي مباشرة (المسار الذي تأكدنا منه)
-        git clone https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git -b star-r-oss android-kernel --depth=1
+        # سحب سورس مخصص وجاهز للبناء وليس سورس الشركة الخام
+        git clone https://github.com/Yink-Repo/kernel_xiaomi_sm8350.git -b main android-kernel --depth=1
 
-    - name: Add KernelSU
+    - name: Setup KernelSU
       run: |
         cd android-kernel
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
 
-    - name: Professional Build
+    - name: Building
       run: |
         cd android-kernel
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
         
-        # 1. تجهيز الإعدادات الأساسية
-        make O=out ARCH=arm64 gki_defconfig
+        # إعدادات كوالكوم المستقرة (sm8350 هي شريحة جهازك)
+        make O=out ARCH=arm64 vendor/star_defconfig || make O=out ARCH=arm64 star_defconfig
         
-        # 2. دمج الملفات التي ظهرت في صورتك (star_GKI / star_QGKI / star_consolidate)
-        # هذا هو "الكوبري" التقني لضمان عمل الكيرنل على جهازك
-        echo "تجميع إعدادات Mi 11 Ultra..."
-        cat arch/arm64/configs/vendor/star_GKI.config >> out/.config
-        cat arch/arm64/configs/vendor/star_QGKI.config >> out/.config
-        cat arch/arm64/configs/vendor/star_consolidate.config >> out/.config
-        
-        # 3. تثبيت الإعدادات النهائية وتجاهل التحذيرات
-        make O=out ARCH=arm64 olddefconfig
+        # البناء مع تجاهل التحذيرات القاتلة
         make -j$(nproc --all) O=out ARCH=arm64 CC="ccache clang" CLANG_TRIPLE=aarch64-linux-gnu- KCFLAGS="-w"
 
-    - name: Final Package
+    - name: Package
       run: |
         git clone https://github.com/osm0sis/AnyKernel3 --depth=1 AnyKernel3
-        # نسخ الملفات الناتجة (Image.gz-dtb هو الملف المطلوب لجهازك)
-        cp android-kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ || cp android-kernel/out/arch/arm64/boot/Image.gz AnyKernel3/
-        cd AnyKernel3 && zip -r9 ../Muktada-Kernel-Mi11Ultra.zip *
+        find android-kernel/out/arch/arm64/boot/ -name "Image.gz*" -exec cp {} AnyKernel3/ \;
+        cd AnyKernel3 && zip -r9 ../Muktada-Kernel-Star.zip *
 
-    - name: Upload Result
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: Finished-Kernel
-        path: Muktada-Kernel-Mi11Ultra.zip
+        name: Final-Kernel-Zip
+        path: Muktada-Kernel-Star.zip
